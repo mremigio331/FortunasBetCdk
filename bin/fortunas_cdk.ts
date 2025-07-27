@@ -1,20 +1,64 @@
 #!/opt/homebrew/opt/node/bin/node
-import * as cdk from 'aws-cdk-lib';
-import { FortunasCdkStack } from '../lib/fortunas_cdk-stack';
+import * as cdk from "aws-cdk-lib";
+import { WebsiteStack } from "../lib/stacks/websiteStack";
+import * as fs from "fs";
+import * as path from "path";
 
-const app = new cdk.App();
-new FortunasCdkStack(app, 'FortunasCdkStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
+async function getEnvConfig() {
+  // Use environment variables for config in CI/CD, fallback to file for local dev
+  const isCICD =
+    !!process.env.CICD ||
+    !!process.env.CODEBUILD_BUILD_ID ||
+    !!process.env.CODEPIPELINE_EXECUTION_ID ||
+    !!process.env.CODEDEPLOY_DEPLOYMENT_ID ||
+    !!process.env.USE_SECRETS_MANAGER;
+  console.log(
+    `[CDK ENV DETECT] CICD: ${process.env.CICD}, CODEBUILD_BUILD_ID: ${process.env.CODEBUILD_BUILD_ID}, CODEPIPELINE_EXECUTION_ID: ${process.env.CODEPIPELINE_EXECUTION_ID}, CODEDEPLOY_DEPLOYMENT_ID: ${process.env.CODEDEPLOY_DEPLOYMENT_ID}, USE_SECRETS_MANAGER: ${process.env.USE_SECRETS_MANAGER}, isCICD: ${isCICD}`,
+  );
+  if (isCICD) {
+    // Expect a single environment variable CDK_ENV_CONFIG containing the JSON config
+    if (!process.env.CDK_ENV_CONFIG) {
+      throw new Error(
+        "CDK_ENV_CONFIG environment variable not set in CI/CD environment",
+      );
+    }
+    return JSON.parse(process.env.CDK_ENV_CONFIG);
+  } else {
+    // Local fallback
+    const envFilePath = path.resolve(__dirname, "../cdk.env.json");
+    console.log(`[CDK ENV DETECT] Using local env file: ${envFilePath}`);
+    const envFileContent = fs.readFileSync(envFilePath, "utf-8");
+    return JSON.parse(envFileContent);
+  }
+}
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+async function main() {
+  const app = new cdk.App();
+  const awsEnv = { region: "us-west-2" };
+  const envConfig = await getEnvConfig();
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+  for (const stage of Object.keys(envConfig)) {
+    const config = envConfig[stage];
+    console.log(`[CDK ENV DETECT] Deploying stage: ${stage}`, config);
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
-});
+    const {
+      hostedZoneId,
+      websiteDomainName,
+      apiDomainName,
+      callbackUrls,
+      wildcardCertificateArn,
+      escalationEmail,
+      escalationNumber,
+    } = config;
+
+    new WebsiteStack(app, `FortunasBets-WebsiteStack-${stage}`, {
+      env: awsEnv,
+      domainName: websiteDomainName,
+      hostedZoneId,
+      stage,
+      certificateArn: wildcardCertificateArn,
+    });
+  }
+}
+
+main();
