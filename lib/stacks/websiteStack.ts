@@ -9,6 +9,7 @@ import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as path from "path";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as iam from "aws-cdk-lib/aws-iam";
+import { fortunasBet } from "../constants";
 
 interface WebsiteStackProps extends StackProps {
   domainName: string;
@@ -28,7 +29,7 @@ export class WebsiteStack extends Stack {
 
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
       this,
-      `FortunasBets-HostedZone-${stage}`,
+      `${fortunasBet}-HostedZone-${stage}`,
       {
         hostedZoneId,
         zoneName: domainName,
@@ -38,13 +39,13 @@ export class WebsiteStack extends Stack {
     // Import the shared certificate from us-east-1
     const certificate = certmgr.Certificate.fromCertificateArn(
       this,
-      `FortunasBets-Certificate-${stage}`,
+      `${fortunasBet}-Certificate-${stage}`,
       certificateArn,
     );
 
     const loggingBucket = new s3.Bucket(
       this,
-      `FortunasBets-AccessLogsBucket-${stage}`,
+      `${fortunasBet}-AccessLogsBucket-${stage}`,
       {
         removalPolicy: RemovalPolicy.RETAIN,
         encryption: s3.BucketEncryption.S3_MANAGED,
@@ -54,9 +55,9 @@ export class WebsiteStack extends Stack {
 
     this.siteBucket = new s3.Bucket(
       this,
-      `FortunasBets-WebsiteBucket-${stage}`,
+      `${fortunasBet}-WebsiteBucket-${stage}`,
       {
-        bucketName: `fortunasbets-website-bucket-${stage.toLowerCase()}`,
+        bucketName: `${fortunasBet.toLowerCase()}-website-bucket-${stage.toLowerCase()}`,
         publicReadAccess: false,
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         removalPolicy: RemovalPolicy.DESTROY,
@@ -68,15 +69,15 @@ export class WebsiteStack extends Stack {
 
     const originAccessControl = new cloudfront.S3OriginAccessControl(
       this,
-      `FortunasBets-OAC-${stage}`,
+      `${fortunasBet}-OAC-${stage}`,
       {
-        description: `Origin Access Control for FortunasBets ${stage}`,
+        description: `Origin Access Control for ${fortunasBet} ${stage}`,
       },
     );
 
     this.distribution = new cloudfront.Distribution(
       this,
-      `FortunasBets-Distribution-${stage}`,
+      `${fortunasBet}-Distribution-${stage}`,
       {
         defaultBehavior: {
           origin: origins.S3BucketOrigin.withOriginAccessControl(
@@ -133,7 +134,7 @@ export class WebsiteStack extends Stack {
     );
 
     // Create Route 53 alias record
-    new route53.ARecord(this, `FortunasBets-AliasRecord-${stage}`, {
+    new route53.ARecord(this, `${fortunasBet}-AliasRecord-${stage}`, {
       zone: hostedZone,
       target: route53.RecordTarget.fromAlias(
         new route53_targets.CloudFrontTarget(this.distribution),
@@ -143,7 +144,7 @@ export class WebsiteStack extends Stack {
     // Deploy website content to S3 bucket
     new s3deploy.BucketDeployment(
       this,
-      `FortunasBets-WebsiteDeployment-${stage}`,
+      `${fortunasBet}-WebsiteDeployment-${stage}`,
       {
         sources: [
           s3deploy.Source.asset(

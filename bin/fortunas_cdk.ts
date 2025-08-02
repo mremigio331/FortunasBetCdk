@@ -1,8 +1,11 @@
 #!/opt/homebrew/opt/node/bin/node
 import * as cdk from "aws-cdk-lib";
 import { WebsiteStack } from "../lib/stacks/websiteStack";
+import { CognitoStack } from "../lib/stacks/cognitoStack";
+import { DatabaseStack } from "../lib/stacks/databaseStack";
 import * as fs from "fs";
 import * as path from "path";
+import { fortunasBet } from "../lib/constants";
 
 async function getEnvConfig() {
   // Use environment variables for config in CI/CD, fallback to file for local dev
@@ -51,7 +54,29 @@ async function main() {
       escalationNumber,
     } = config;
 
-    new WebsiteStack(app, `FortunasBets-WebsiteStack-${stage}`, {
+    const databaseStack = new DatabaseStack(
+      app,
+      `${fortunasBet}-DatabaseStack-${stage}`,
+      {
+        env: awsEnv,
+        stage,
+      },
+    );
+
+    const cognitoStack = new CognitoStack(
+      app,
+      `${fortunasBet}-CognitoStack-${stage}`,
+      {
+        env: awsEnv,
+        stage,
+        callbackUrls,
+        userTable: databaseStack.table,
+        escalationEmail,
+        escalationNumber,
+      },
+    );
+
+    new WebsiteStack(app, `${fortunasBet}-WebsiteStack-${stage}`, {
       env: awsEnv,
       domainName: websiteDomainName,
       hostedZoneId,
