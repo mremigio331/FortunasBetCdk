@@ -3,6 +3,8 @@ import * as cdk from "aws-cdk-lib";
 import { WebsiteStack } from "../lib/stacks/websiteStack";
 import { CognitoStack } from "../lib/stacks/cognitoStack";
 import { DatabaseStack } from "../lib/stacks/databaseStack";
+import { ApiStack } from "../lib/stacks/apiStack";
+import { ApiDnsStack } from "../lib/stacks/apiDnsStack";
 import * as fs from "fs";
 import * as path from "path";
 import { fortunasBet } from "../lib/constants";
@@ -50,6 +52,7 @@ async function main() {
       apiDomainName,
       callbackUrls,
       wildcardCertificateArn,
+      apiWildcardCertificateArn,
       escalationEmail,
       escalationNumber,
     } = config;
@@ -82,6 +85,27 @@ async function main() {
       hostedZoneId,
       stage,
       certificateArn: wildcardCertificateArn,
+    });
+
+    const api = new ApiStack(app, `${fortunasBet}-ApiStack-${stage}`, {
+      env: awsEnv,
+      apiDomainName: apiDomainName,
+      stage,
+      userPool: cognitoStack.userPool,
+      userPoolClient: cognitoStack.userPoolClient,
+      userTable: databaseStack.table,
+      escalationEmail: escalationEmail,
+      escalationNumber: escalationNumber,
+    });
+
+    new ApiDnsStack(app, `${fortunasBet}-ApiDnsStack-${stage}`, {
+      env: awsEnv,
+      stage,
+      rootDomainName: websiteDomainName,
+      apiDomainName: apiDomainName,
+      hostedZoneId: hostedZoneId,
+      api: api.api,
+      certificateArn: apiWildcardCertificateArn,
     });
   }
 }

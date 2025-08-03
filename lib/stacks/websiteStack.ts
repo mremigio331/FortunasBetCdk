@@ -148,7 +148,7 @@ export class WebsiteStack extends Stack {
       {
         sources: [
           s3deploy.Source.asset(
-            path.join(__dirname, "../../../fortunasWebsite/dist"),
+            path.join(__dirname, "../../../FortunasBetWebsite/dist"),
           ),
         ],
         destinationBucket: this.siteBucket,

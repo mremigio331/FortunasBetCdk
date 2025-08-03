@@ -46,7 +46,7 @@ export class CognitoStack extends Stack {
       `${fortunasBet}-CognitoLambdaLayer-${stage}`,
       {
         code: lambda.Code.fromAsset(
-          path.join(__dirname, "../../../fortunasLambdas/lambda_layer.zip"),
+          path.join(__dirname, "../../../FortunasBetLambdas/lambda_layer.zip"),
         ),
         compatibleRuntimes: [lambda.Runtime.PYTHON_3_11],
         description: `{${fortunasBet}} Lambda layer with dependencies`,
@@ -69,7 +69,7 @@ export class CognitoStack extends Stack {
         runtime: lambda.Runtime.PYTHON_3_11,
         handler: "cognito_sign_up.handler",
         code: lambda.Code.fromAsset(
-          path.join(__dirname, "../../../fortunasLambdas"),
+          path.join(__dirname, "../../../FortunasBetLambdas"),
         ),
         tracing: lambda.Tracing.ACTIVE, // Enable X-Ray tracing for Lambda
         timeout: Duration.seconds(90),

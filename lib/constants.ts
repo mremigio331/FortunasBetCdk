@@ -1,5 +1,5 @@
 export const STAGES: { [key: string]: string } = {
-  staging: "Staging",
+  testing: "Testing",
   production: "Production",
 };
 
