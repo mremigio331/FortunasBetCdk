@@ -26,6 +26,7 @@ interface CognitoStackProps extends StackProps {
 
 export class CognitoStack extends Stack {
   public readonly userPool: cognito.UserPool;
+  public readonly userPoolClientIOS: cognito.UserPoolClient;
   public readonly userPoolClient: cognito.UserPoolClient;
   public readonly userPoolDomain: cognito.UserPoolDomain;
   public readonly identityPool: cognito.CfnIdentityPool;
@@ -156,6 +157,37 @@ export class CognitoStack extends Stack {
       },
     );
 
+    // iOS App Client
+    const iosCallback = "fortunasbet://auth/callback";
+    const iosLogout = "fortunasbet://signout";
+
+    this.userPoolClientIOS = new cognito.UserPoolClient(
+      this,
+      `${fortunasBet}-UserPoolClientIOS-${stage}`,
+      {
+        userPool: this.userPool,
+        generateSecret: false, // public mobile client → PKCE enforced by Cognito
+        oAuth: {
+          flows: { authorizationCodeGrant: true },
+          scopes: [
+            cognito.OAuthScope.OPENID,
+            cognito.OAuthScope.EMAIL,
+            cognito.OAuthScope.PROFILE,
+          ],
+          callbackUrls: [iosCallback],
+          logoutUrls: [iosLogout],
+        },
+        enableTokenRevocation: true,
+        preventUserExistenceErrors: true,
+        accessTokenValidity: Duration.hours(1),
+        idTokenValidity: Duration.hours(1),
+        refreshTokenValidity: Duration.days(14),
+        supportedIdentityProviders: [
+          cognito.UserPoolClientIdentityProvider.COGNITO,
+        ],
+      },
+    );
+
     this.userPoolDomain = new cognito.UserPoolDomain(
       this,
       `${fortunasBet}-CognitoDomain-${stage}`,
@@ -178,6 +210,10 @@ export class CognitoStack extends Stack {
             clientId: this.userPoolClient.userPoolClientId,
             providerName: this.userPool.userPoolProviderName,
           },
+          {
+            clientId: this.userPoolClientIOS.userPoolClientId,
+            providerName: this.userPool.userPoolProviderName,
+          },
         ],
       },
     );
@@ -188,6 +224,10 @@ export class CognitoStack extends Stack {
 
     new CfnOutput(this, `${fortunasBet}-UserPoolClientId-${stage}`, {
       value: this.userPoolClient.userPoolClientId,
+    });
+
+    new CfnOutput(this, `${fortunasBet}-UserPoolClientIOSId-${stage}`, {
+      value: this.userPoolClientIOS.userPoolClientId,
     });
 
     new CfnOutput(this, `${fortunasBet}-UserPoolDomain-${stage}`, {
