@@ -84,7 +84,6 @@ async function main() {
       domainName: websiteDomainName,
       hostedZoneId,
       stage,
-      certificateArn: wildcardCertificateArn,
     });
 
     const api = new ApiStack(app, `${fortunasBet}-ApiStack-${stage}`, {
