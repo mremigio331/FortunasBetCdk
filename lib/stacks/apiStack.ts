@@ -132,6 +132,14 @@ export class ApiStack extends Stack {
       }),
     );
 
+    fortunasBetApi.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["cognito-idp:AdminUpdateUserAttributes"],
+        resources: [userPool.userPoolArn],
+      }),
+    );
+
     userTable.grantReadWriteData(fortunasBetApi);
 
     const accessLogGroup = new logs.LogGroup(
