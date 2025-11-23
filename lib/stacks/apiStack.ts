@@ -194,7 +194,11 @@ export class ApiStack extends Stack {
                 ? ["https://testing.fortunasbet.com", "http://localhost:8080"]
                 : ["http://localhost:8080"],
           allowMethods: apigw.Cors.ALL_METHODS,
-          allowHeaders: ["authorization", "content-type"],
+          allowHeaders: [
+            "authorization",
+            "content-type",
+            "X-Git-Commit", // Add X-Git-Commit to allowed headers
+          ],
           allowCredentials: true,
         },
         deployOptions: {
@@ -216,6 +220,8 @@ export class ApiStack extends Stack {
               errorResponseType: "$context.error.responseType",
               auth_raw: "$context.authorizer",
               xrayTraceId: "$context.xrayTraceId",
+              websiteVersion:
+                "$context.requestOverride.header.X-Git-Commit ?? 'unknown'",
             }),
           ),
           loggingLevel: apigw.MethodLoggingLevel.INFO,

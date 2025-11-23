@@ -5,6 +5,7 @@ import { CognitoStack } from "../lib/stacks/cognitoStack";
 import { DatabaseStack } from "../lib/stacks/databaseStack";
 import { ApiStack } from "../lib/stacks/apiStack";
 import { ApiDnsStack } from "../lib/stacks/apiDnsStack";
+import { DashboardStack } from "../lib/stacks/dashboardStack";
 import * as fs from "fs";
 import * as path from "path";
 import { fortunasBet } from "../lib/constants";
@@ -105,6 +106,11 @@ async function main() {
       hostedZoneId: hostedZoneId,
       api: api.api,
       certificateArn: apiWildcardCertificateArn,
+    });
+
+    new DashboardStack(app, `${fortunasBet}-DashboardStack-${stage}`, {
+      env: awsEnv,
+      stage,
     });
   }
 }

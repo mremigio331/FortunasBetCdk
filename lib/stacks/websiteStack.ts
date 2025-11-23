@@ -103,61 +103,95 @@ export class WebsiteStack extends Stack {
       },
     );
 
-    // OAC
+    // OAC (recommended over legacy OAI)
     const originAccessControl = new cloudfront.S3OriginAccessControl(
       this,
       `${fortunasBet}-OAC-${stage}`,
       { description: `Origin Access Control for ${fortunasBet} ${stage}` },
     );
 
-    // Cache policy
-    const customCachePolicy = new cloudfront.CachePolicy(
+    // === Cache Policies ===
+
+    // Use managed "no cache" policy for HTML/app shell (avoids gzip/brotli flag issue with 0 TTL)
+    const htmlCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
+
+    // Hashed assets: long cache at the edge
+    const assetsCachePolicy = new cloudfront.CachePolicy(
       this,
-      `${fortunasBet}-CustomCachePolicy-${stage}`,
+      `${fortunasBet}-AssetsLongCache-${stage}`,
       {
-        cachePolicyName: `${fortunasBet}-CustomCachePolicy-${stage}`,
-        defaultTtl: Duration.minutes(5),
-        minTtl: Duration.seconds(0),
-        maxTtl: Duration.minutes(10),
+        cachePolicyName: `${fortunasBet}-AssetsLongCache-${stage}`,
+        defaultTtl: Duration.days(365),
+        minTtl: Duration.days(1),
+        maxTtl: Duration.days(365),
         enableAcceptEncodingGzip: true,
         enableAcceptEncodingBrotli: true,
       },
     );
 
-    // CloudFront Distribution
+    // === SPA rewrite: CloudFront Function on viewer-request for default behavior only ===
+    const spaRewriteFn = new cloudfront.Function(
+      this,
+      `${fortunasBet}-SpaRewriteFn-${stage}`,
+      {
+        code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var req = event.request;
+  // Only rewrite for GET navigations where the path doesn't look like a file
+  if (req && req.method === 'GET') {
+    var uri = req.uri || '/';
+    // If there's no dot in the URI, treat it as an SPA route and serve index.html
+    if (!uri.includes('.')) {
+      req.uri = '/index.html';
+    }
+  }
+  return req;
+}
+`),
+      },
+    );
+
+    // Build S3 origin w/ OAC
+    const s3Origin = origins.S3BucketOrigin.withOriginAccessControl(
+      this.siteBucket,
+      { originAccessControl },
+    );
+
+    // CloudFront Distribution (no global 404/403 -> 200 rewrites)
     this.distribution = new cloudfront.Distribution(
       this,
       `${fortunasBet}-Distribution-${stage}`,
       {
         defaultBehavior: {
-          origin: origins.S3BucketOrigin.withOriginAccessControl(
-            this.siteBucket,
-            { originAccessControl },
-          ),
+          origin: s3Origin,
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
           cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-          cachePolicy: customCachePolicy,
+          cachePolicy: htmlCachePolicy, // managed "no cache"
           compress: true,
+          functionAssociations: [
+            {
+              function: spaRewriteFn,
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+            },
+          ],
+        },
+        // Split out /assets/* so hashed files get long cache
+        additionalBehaviors: {
+          "assets/*": {
+            origin: s3Origin,
+            viewerProtocolPolicy:
+              cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+            cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+            cachePolicy: assetsCachePolicy,
+            compress: true,
+          },
         },
         domainNames: [domainName, wwwDomain],
         certificate,
         defaultRootObject: "index.html",
-        errorResponses: [
-          {
-            httpStatus: 404,
-            responseHttpStatus: 200,
-            responsePagePath: "/index.html",
-            ttl: Duration.seconds(1),
-          },
-          {
-            httpStatus: 403,
-            responseHttpStatus: 200,
-            responsePagePath: "/index.html",
-            ttl: Duration.seconds(1),
-          },
-        ],
         priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
         enableLogging: true,
         logBucket: loggingBucket,
@@ -166,7 +200,7 @@ export class WebsiteStack extends Stack {
       },
     );
 
-    // Allow CF to read bucket via OAC
+    // Allow CF to read bucket via OAC (scoped to this distribution)
     this.siteBucket.addToResourcePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -223,14 +257,18 @@ export class WebsiteStack extends Stack {
     // We do 3 passes:
     //   1) HTML (short cache) — exclude all JS/CSS and static assets
     //   2) UNHASHED JS/CSS (short cache)
-    //   3) HASHED assets (long cache, immutable): typical Vite/Webpack "assets/**" + common hashed filename patterns
+    //   3) HASHED assets (long cache, immutable)
+    //
+    // Invalidate ONLY HTML to flip versions quickly and avoid wild "/*" churn.
+
+    const invalidateHtml = ["/", "/index.html", "/404.html"];
 
     // 1) HTML — short cache
     new s3deploy.BucketDeployment(this, `${fortunasBet}-DeployHtml-${stage}`, {
       destinationBucket: this.siteBucket,
       sources: [s3deploy.Source.asset(siteOutputPath)],
       distribution: this.distribution,
-      distributionPaths: ["/*"],
+      distributionPaths: invalidateHtml,
       cacheControl: [
         s3deploy.CacheControl.fromString("public, max-age=0, must-revalidate"),
       ],
@@ -253,8 +291,7 @@ export class WebsiteStack extends Stack {
       include: ["index.html", "**/*.html"],
     });
 
-    // 2) UNHASHED JS/CSS — short cache
-    //    (We exclude the hashed patterns & hashed dirs so only plain names like bundle.js, app.css get short caching.)
+    // 2) UNHASHED JS/CSS — short cache (skip if your build always hashes)
     new s3deploy.BucketDeployment(
       this,
       `${fortunasBet}-DeployUnhashedApp-${stage}`,
@@ -262,20 +299,16 @@ export class WebsiteStack extends Stack {
         destinationBucket: this.siteBucket,
         sources: [s3deploy.Source.asset(siteOutputPath)],
         distribution: this.distribution,
-        distributionPaths: ["/*"],
+        distributionPaths: invalidateHtml,
         cacheControl: [
           s3deploy.CacheControl.fromString(
-            "public, max-age=0, must-revalidate",
+            "public, max-age=30, must-revalidate",
           ),
         ],
         include: ["**/*.js", "**/*.css"],
         exclude: [
-          // exclude maps (handled with hashed bundle typically)
           "**/*.map",
-          // exclude typical hashed dirs
           ...hashedDirs,
-          // exclude common hashed name patterns (loose globs)
-          // e.g. app.abc123.js, app-abc123.css, app.abc123def456.js, etc.
           "**/*.[a-fA-F0-9]*.js",
           "**/*.[a-fA-F0-9]*.css",
           "**/*-*.*.js",
@@ -284,29 +317,24 @@ export class WebsiteStack extends Stack {
       },
     );
 
-    // 3) HASHED assets — long cache
+    // 3) HASHED assets — long cache, no invalidation needed
     new s3deploy.BucketDeployment(
       this,
       `${fortunasBet}-DeployHashed-${stage}`,
       {
         destinationBucket: this.siteBucket,
         sources: [s3deploy.Source.asset(siteOutputPath)],
-        distribution: this.distribution,
-        distributionPaths: ["/*"],
         cacheControl: [
           s3deploy.CacheControl.fromString(
             "public, max-age=31536000, immutable",
           ),
         ],
         include: [
-          // typical bundler assets dir(s)
           ...hashedDirs,
-          // common hashed filename patterns at root or nested
           "**/*.[a-fA-F0-9]*.js",
           "**/*.[a-fA-F0-9]*.css",
           "**/*-*.*.js",
           "**/*-*.*.css",
-          // also long-cache fonts & images normally hashed by bundlers
           "**/*.png",
           "**/*.jpg",
           "**/*.jpeg",
